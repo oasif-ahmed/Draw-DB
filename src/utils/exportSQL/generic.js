@@ -4,7 +4,6 @@ import { dbToTypes, defaultTypes } from "../../data/datatypes";
 import {
   escapeQuotes,
   getInlineFK,
-  inlineEnumTypeName,
   parseDefault,
   uniqueConstraintClause,
   getFkColumnNames,
@@ -82,10 +81,10 @@ export function getTypeString(
       return "bigserial";
     }
     if (field.type === "ENUM") {
-      return inlineEnumTypeName(field);
+      return `${field.name}_t`;
     }
     if (field.type === "SET") {
-      return `${inlineEnumTypeName(field)}[]`;
+      return `${field.name}_t[]`;
     }
     if (field.type === "TIMESTAMP") {
       return "TIMESTAMPTZ";
@@ -264,7 +263,7 @@ function tablesToPostgreSQL(obj) {
         .filter((f) => f.type === "ENUM" || f.type === "SET")
         .map(
           (f) =>
-            `CREATE TYPE "${inlineEnumTypeName(f)}" AS ENUM (${f.values
+            `CREATE TYPE "${f.name}_t" AS ENUM (${f.values
               .map((v) => `'${v}'`)
               .join(", ")});`,
         )
@@ -293,7 +292,7 @@ function tablesToPostgreSQL(obj) {
         .filter((f) => f.type === "ENUM" || f.type === "SET")
         .map(
           (f) =>
-            `CREATE TYPE "${inlineEnumTypeName(f)}" AS ENUM (${f.values
+            `CREATE TYPE "${f.name}_t" AS ENUM (${f.values
               .map((v) => `'${v}'`)
               .join(", ")});`,
         )
@@ -612,7 +611,7 @@ function tablesToOracleSQL(obj) {
                 .filter((f) => f.type === "ENUM" || f.type === "SET")
                 .map(
                   (f) =>
-                    `CREATE DOMAIN "${inlineEnumTypeName(f)}" AS ENUM (${f.values
+                    `CREATE DOMAIN "${f.name}_t" AS ENUM (${f.values
                       .map((v) => `'${v}'`)
                       .join(", ")});\n`,
                 )

@@ -35,13 +35,6 @@ export function escapeQuotes(str) {
   return str.replace(/[']/g, "'$&");
 }
 
-// Inline ENUM/SET columns get a generated type in dialects that have no inline
-// enum syntax. The name chosen on the column wins over the derived one.
-export function inlineEnumTypeName(field) {
-  const custom = String(field.enumName ?? "").trim();
-  return custom || `${field.name}_t`;
-}
-
 export function exportFieldComment(comment) {
   if (comment === "") {
     return "";
