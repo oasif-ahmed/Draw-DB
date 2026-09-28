@@ -93,21 +93,71 @@ function enumNameIndex(enums) {
   return new Map(enums.map((en) => [String(en.name).toUpperCase(), en.name]));
 }
 
-function inlineEnumBlocks(tables) {
-  const declared = new Set();
-  const blocks = [];
+function inlineEnumFields(tables) {
+  const fields = [];
 
   for (const table of tables) {
-    for (const field of table.fields) {
-      if (!isInlineEnumType(field.type) || !Array.isArray(field.values))
-        continue;
-
-      const name = inlineEnumTypeName(field);
-      if (declared.has(name)) continue;
-
-      declared.add(name);
-      blocks.push(enumBlock(name, field.values));
+    for (const field of table.fields ?? []) {
+      if (isInlineEnumType(field.type) && Array.isArray(field.values)) {
+        fields.push(field);
+      }
     }
+  }
+
+  return fields;
+}
+
+// A name can only be declared once in DBML, so fields sharing a name but not
+// their values get a numbered suffix to keep every type reference valid.
+function resolveInlineEnumNames(tables) {
+  const fields = inlineEnumFields(tables);
+  const declared = new Map();
+  const names = new Map();
+
+  for (const field of fields) {
+    const key = JSON.stringify(field.values);
+    const preferred = inlineEnumTypeName(field);
+    const existing = declared.get(preferred.toUpperCase());
+
+    if (!existing) {
+      declared.set(preferred.toUpperCase(), { key, name: preferred });
+      names.set(field, preferred);
+      continue;
+    }
+
+    if (existing.key === key) {
+      names.set(field, existing.name);
+      continue;
+    }
+
+    let i = 2;
+    let candidate = `${preferred}_${i}`;
+    while (declared.has(candidate.toUpperCase())) {
+      const taken = declared.get(candidate.toUpperCase());
+      if (taken.key === key) {
+        candidate = taken.name;
+        break;
+      }
+      i++;
+      candidate = `${preferred}_${i}`;
+    }
+
+    declared.set(candidate.toUpperCase(), { key, name: candidate });
+    names.set(field, candidate);
+  }
+
+  return { fields, names };
+}
+
+function inlineEnumBlocks(names, fields) {
+  const blocks = [];
+  const emitted = new Set();
+
+  for (const field of fields) {
+    const name = names.get(field);
+    if (emitted.has(name)) continue;
+    emitted.add(name);
+    blocks.push(enumBlock(name, field.values));
   }
 
   return blocks;
@@ -140,13 +190,13 @@ function indexesBlock(table) {
   return `\n\n\tindexes {\n${entries.join("\n")}\n\t}`;
 }
 
-function tableBlock(table, database, enumNames) {
+function tableBlock(table, database, enumNames, inlineEnumNames) {
   const headerColor = table.color ? ` [headercolor: ${table.color}]` : "";
   const fields = table.fields
     .map(
       (field) =>
         `\t${quoteIdentifier(field.name)} ${quoteIdentifier(
-          dbmlTypeName(field, enumNames),
+          dbmlTypeName(field, enumNames, inlineEnumNames),
         )}${dbmlFieldSize(field, database)}${columnSettings(field, database)}`,
     )
     .join("\n");
@@ -200,11 +250,15 @@ export function toDBML(diagram) {
     (table) => (table.fields ?? []).length > 0,
   );
   const enumNames = enumNameIndex(enums);
+  const { fields: inlineFields, names: inlineEnumNames } =
+    resolveInlineEnumNames(tables);
 
   return [
     ...enums.map((en) => enumBlock(en.name, en.values ?? [])),
-    ...inlineEnumBlocks(tables),
-    ...tables.map((table) => tableBlock(table, database, enumNames)),
+    ...inlineEnumBlocks(inlineEnumNames, inlineFields),
+    ...tables.map((table) =>
+      tableBlock(table, database, enumNames, inlineEnumNames),
+    ),
     ...(diagram.relationships ?? []).map((rel) => refBlock(rel, tables)),
   ]
     .filter(Boolean)

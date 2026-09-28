@@ -1,6 +1,7 @@
 import { Parser } from "@dbml/core";
 import { Cardinality, Constraint } from "../../data/constants";
-import { inlineEnumTypeName } from "./types";
+import { databases } from "../../data/databases";
+import { isInlineEnumType } from "./types";
 
 const parser = new Parser();
 
@@ -92,23 +93,24 @@ function constraintFor(keyword) {
   );
 }
 
-function foldInlineEnums(tables, enums) {
+// Databases without named enum support have no place to keep an enum that is
+// only used by a column, so those blocks are folded back into the column.
+function foldInlineEnums(tables, enums, database) {
+  if (databases[database]?.hasEnums) return enums;
+
   const enumsByName = new Map(enums.map((en) => [en.name.toUpperCase(), en]));
   const folded = new Set();
 
   for (const table of tables) {
     for (const field of table.fields) {
+      if (isInlineEnumType(field.type)) continue;
+
       const candidate = enumsByName.get(field.type);
       if (!candidate) continue;
 
-      const expected = inlineEnumTypeName({
-        name: field.name,
-        values: candidate.values,
-      });
-      if (expected.toUpperCase() !== field.type) continue;
-
       field.type = "ENUM";
       field.values = [...candidate.values];
+      field.enumName = candidate.name;
       folded.add(candidate.name);
     }
   }
@@ -116,7 +118,7 @@ function foldInlineEnums(tables, enums) {
   return enums.filter((en) => !folded.has(en.name));
 }
 
-export function parseDbml(src) {
+export function parseDbml(src, database) {
   const ast = parser.parse(src, "dbmlv2");
 
   const tables = [];
@@ -137,6 +139,6 @@ export function parseDbml(src) {
   return {
     tables,
     relationships,
-    enums: foldInlineEnums(tables, enums),
+    enums: foldInlineEnums(tables, enums, database),
   };
 }

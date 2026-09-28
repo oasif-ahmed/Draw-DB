@@ -133,6 +133,7 @@ export default function TableField({ data, tid, index, inherited }) {
                 default: "",
                 size: "",
                 values: [],
+                enumName: "",
               });
             } else if (typeInfo.hasCheck) {
               updateField(tid, data.id, {
@@ -146,6 +147,7 @@ export default function TableField({ data, tid, index, inherited }) {
                 increment: incr,
                 size: "",
                 values: [],
+                enumName: "",
               });
             }
           }}

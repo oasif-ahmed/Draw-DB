@@ -13,6 +13,9 @@ export function isInlineEnumType(type) {
 }
 
 export function inlineEnumTypeName(field) {
+  const custom = String(field.enumName ?? "").trim();
+  if (custom) return custom;
+
   const values = Array.isArray(field.values) ? field.values : [];
   return `${field.name}_${values.join("_")}_t`;
 }
@@ -22,9 +25,11 @@ export function typeTakesSize(type, database) {
   return Boolean(meta && (meta.isSized || meta.hasPrecision));
 }
 
-export function dbmlTypeName(field, enumNamesByUpperCase) {
+export function dbmlTypeName(field, enumNamesByUpperCase, inlineEnumNames) {
   const type = String(field.type ?? "");
-  if (isInlineEnumType(type)) return inlineEnumTypeName(field);
+  if (isInlineEnumType(type)) {
+    return inlineEnumNames?.get(field) ?? inlineEnumTypeName(field);
+  }
 
   const declared = enumNamesByUpperCase?.get(type.toUpperCase());
   if (declared) return declared;

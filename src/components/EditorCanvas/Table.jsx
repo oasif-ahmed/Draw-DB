@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Action,
   Tab,
@@ -33,6 +34,7 @@ import {
   useLayout,
   useSettings,
   useDiagram,
+  useEnums,
   useSelect,
   useUndoRedo,
   useTransform,
@@ -44,6 +46,7 @@ import { isRtl } from "../../i18n/utils/rtl";
 import i18n from "../../i18n/i18n";
 import {
   getCommentHeight,
+  getFieldEnumValues,
   getFieldOffsetY,
   getTableHeight,
   getTableWidth,
@@ -68,6 +71,7 @@ export default function Table({
   const [editingFieldId, setEditingFieldId] = useState(null);
   const [editingFieldPart, setEditingFieldPart] = useState(null);
   const [editNameValue, setEditNameValue] = useState("");
+  const [enumValuesHover, setEnumValuesHover] = useState(null);
   const inputRef = useRef(null);
   const { layout } = useLayout();
   const {
@@ -77,8 +81,10 @@ export default function Table({
     addTable,
     deleteTable,
     deleteField,
+    updateField,
     updateTable,
   } = useDiagram();
+  const { enums } = useEnums();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const { settings } = useSettings();
   const { transform } = useTransform();
@@ -122,6 +128,11 @@ export default function Table({
       )
     );
   }, [selectedElement, tableData, bulkSelectedElements]);
+
+  // The stored anchor goes stale as soon as the canvas moves under the cursor.
+  useEffect(() => {
+    setEnumValuesHover(null);
+  }, [transform.zoom, transform.pan.x, transform.pan.y]);
 
   const toggleTableCollapse = (e) => {
     e.stopPropagation();
@@ -410,6 +421,7 @@ export default function Table({
         default: "",
         size: "",
         values: [],
+        enumName: "",
       });
     } else if (typeInfo.hasCheck) {
       updateField(tableData.id, fieldData.id, {
@@ -423,6 +435,7 @@ export default function Table({
         increment: incr,
         size: "",
         values: [],
+        enumName: "",
       });
     }
     setEditingFieldId(null);
@@ -673,14 +686,62 @@ export default function Table({
           <TableInfo data={tableData} />
         </div>
       </SideSheet>
+      {createPortal(enumValuesPopup(), document.body)}
     </>
   );
+
+  function enumValuesPopup() {
+    if (!enumValuesHover) return null;
+
+    const { rect, name, values } = enumValuesHover;
+    const tooltipWidth = 200;
+    const gap = 8;
+    const rtl = isRtl(i18n.language);
+    const fitsRight = rect.right + gap + tooltipWidth <= window.innerWidth;
+    const left = rtl
+      ? rect.left - gap - tooltipWidth
+      : fitsRight
+        ? rect.right + gap
+        : rect.left - gap - tooltipWidth;
+    const top = Math.min(
+      Math.max(rect.top + rect.height / 2 - 20, 8),
+      window.innerHeight - 48,
+    );
+
+    return (
+      <div
+        style={{
+          position: "fixed",
+          left: `${left}px`,
+          top: `${top}px`,
+          width: `${tooltipWidth}px`,
+          maxHeight: `${Math.max(window.innerHeight - top - 16, 80)}px`,
+          zIndex: 1100,
+        }}
+        className="pointer-events-none flex flex-col gap-1.5 px-2.5 py-2 rounded-lg shadow-lg border-color border bg-semi-grey-2"
+        role="tooltip"
+      >
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-color">
+          {name}
+        </div>
+        <div className="flex flex-col gap-0.5 overflow-y-auto min-h-0">
+          {values.map((value) => (
+            <span key={value} className="font-mono text-xs text-color">
+              {value}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   function field(fieldData, index) {
     const fieldResolved = resolveType(database, fieldData.type);
     const showFieldComment = fieldData.comment && settings.showComments;
-    const isEditingName = editingFieldId === fieldData.id && editingFieldPart === "name";
-    const isEditingType = editingFieldId === fieldData.id && editingFieldPart === "type";
+    const isEditingName =
+      editingFieldId === fieldData.id && editingFieldPart === "name";
+    const isEditingType =
+      editingFieldId === fieldData.id && editingFieldPart === "type";
 
     const typeOptions = [
       ...Object.keys(dbToTypes[database]).map((value) => ({
@@ -691,7 +752,114 @@ export default function Table({
         label: value,
         value,
       })),
+      ...enums.map((e) => ({
+        label: e.name.toUpperCase(),
+        value: e.name.toUpperCase(),
+      })),
     ];
+
+    const typeBadge = (
+      <div className="flex gap-1 items-center">
+        {fieldData.primary && <IconKeyStroked className="text-blue-500" />}
+        {!fieldData.notNull && (
+          <span className="font-mono text-blue-400">?</span>
+        )}
+        <span
+          className={
+            "font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded field-type-badge cursor-pointer " +
+            (fieldResolved.isCustom ? "" : fieldResolved.color)
+          }
+          style={
+            fieldResolved.isCustom
+              ? {
+                  color: fieldResolved.color,
+                  backgroundColor: `${fieldResolved.color}15`,
+                }
+              : {}
+          }
+          onClick={() => startEditField(fieldData.id, "type", fieldData.type)}
+        >
+          {fieldData.type +
+            ((fieldResolved.isSized || fieldResolved.hasPrecision) &&
+            fieldData.size &&
+            fieldData.size !== ""
+              ? `(${fieldData.size})`
+              : "")}
+        </span>
+      </div>
+    );
+
+    const enumValues = getFieldEnumValues(fieldData, enums).filter(
+      (value) => String(value).trim() !== "",
+    );
+
+    const showEnumValues = enumValues.length > 0 && !isEditingName;
+
+    const nameArea = (
+      <div
+        tabIndex={-1}
+        className={`${
+          hoveredField === index ? "text-zinc-400" : ""
+        } flex items-center gap-2 overflow-hidden min-w-0`}
+      >
+        <button
+          className="shrink-0 w-[10px] h-[10px] bg-[#3b82f6] rounded-full opacity-60 hover:opacity-100 transition-opacity"
+          onPointerDown={(e) => {
+            if (!e.isPrimary) return;
+            handleGripField();
+            const fieldY =
+              tableData.y +
+              getFieldOffsetY(
+                visibleFields,
+                index,
+                width,
+                settings.showComments,
+              ) +
+              tableHeaderHeight +
+              tableColorStripHeight +
+              getCommentHeight(
+                tableData.comment,
+                width,
+                settings.showComments,
+              ) +
+              14;
+            setLinkingLine((prev) => ({
+              ...prev,
+              startFieldId: fieldData.id,
+              startTableId: tableData.id,
+              startX: tableData.x + 15,
+              startY: fieldY,
+              endX: tableData.x + 15,
+              endY: fieldY,
+            }));
+          }}
+        />
+        {isEditingName ? (
+          <input
+            ref={inputRef}
+            className="flex-1 px-1 py-0.5 text-sm rounded border border-blue-400 bg-white/80 dark:bg-zinc-800/80 outline-none min-w-0"
+            value={editNameValue}
+            onChange={(e) => setEditNameValue(e.target.value)}
+            onBlur={() => commitEditField(fieldData.id, "name", editNameValue)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter")
+                commitEditField(fieldData.id, "name", editNameValue);
+              if (e.key === "Escape") {
+                setEditingFieldId(null);
+                setEditingFieldPart(null);
+              }
+            }}
+          />
+        ) : (
+          <span
+            className="overflow-hidden text-ellipsis whitespace-nowrap cursor-text hover:text-blue-500 transition-colors"
+            onClick={() => startEditField(fieldData.id, "name", fieldData.name)}
+          >
+            {fieldData.name}
+          </span>
+        )}
+      </div>
+    );
 
     return (
       <div
@@ -705,81 +873,31 @@ export default function Table({
             tableId: tableData.id,
             fieldId: fieldData.id,
           });
+
+          if (showEnumValues) {
+            setEnumValuesHover({
+              name: fieldData.enumName || fieldData.type,
+              values: enumValues,
+              rect: e.currentTarget.getBoundingClientRect(),
+            });
+          }
         }}
         onPointerLeave={(e) => {
           if (!e.isPrimary) return;
           setHoveredField(null);
+          setEnumValuesHover(null);
           setHoveredTable({
             tableId: null,
             fieldId: null,
           });
         }}
         onPointerDown={(e) => {
+          setEnumValuesHover(null);
           e.target.releasePointerCapture(e.pointerId);
         }}
       >
         <div className="h-[36px] px-2 py-1 flex justify-between items-center gap-1">
-          <div
-            className={`${
-              hoveredField === index ? "text-zinc-400" : ""
-            } flex items-center gap-2 overflow-hidden min-w-0`}
-          >
-            <button
-              className="shrink-0 w-[10px] h-[10px] bg-[#3b82f6] rounded-full opacity-60 hover:opacity-100 transition-opacity"
-              onPointerDown={(e) => {
-                if (!e.isPrimary) return;
-                handleGripField();
-                const fieldY =
-                  tableData.y +
-                  getFieldOffsetY(
-                    visibleFields,
-                    index,
-                    width,
-                    settings.showComments,
-                  ) +
-                  tableHeaderHeight +
-                  tableColorStripHeight +
-                  getCommentHeight(
-                    tableData.comment,
-                    width,
-                    settings.showComments,
-                  ) +
-                  14;
-                setLinkingLine((prev) => ({
-                  ...prev,
-                  startFieldId: fieldData.id,
-                  startTableId: tableData.id,
-                  startX: tableData.x + 15,
-                  startY: fieldY,
-                  endX: tableData.x + 15,
-                  endY: fieldY,
-                }));
-              }}
-            />
-            {isEditingName ? (
-              <input
-                ref={inputRef}
-                className="flex-1 px-1 py-0.5 text-sm rounded border border-blue-400 bg-white/80 dark:bg-zinc-800/80 outline-none min-w-0"
-                value={editNameValue}
-                onChange={(e) => setEditNameValue(e.target.value)}
-                onBlur={() => commitEditField(fieldData.id, "name", editNameValue)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitEditField(fieldData.id, "name", editNameValue);
-                  if (e.key === "Escape") {
-                    setEditingFieldId(null);
-                    setEditingFieldPart(null);
-                  }
-                }}
-              />
-            ) : (
-              <span
-                className="overflow-hidden text-ellipsis whitespace-nowrap cursor-text hover:text-blue-500 transition-colors"
-                onClick={() => startEditField(fieldData.id, "name", fieldData.name)}
-              >
-                {fieldData.name}
-              </span>
-            )}
-          </div>
+          {nameArea}
           <div className="text-zinc-400 flex items-center gap-1 shrink-0">
             {hoveredField === index && !isEditingName && !isEditingType ? (
               <>
@@ -832,32 +950,7 @@ export default function Table({
                   autoFocus
                 />
               ) : (
-                <div className="flex gap-1 items-center">
-                  {fieldData.primary && <IconKeyStroked className="text-blue-500" />}
-                  {!fieldData.notNull && <span className="font-mono text-blue-400">?</span>}
-                  <span
-                    className={
-                      "font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded field-type-badge cursor-pointer " +
-                      (fieldResolved.isCustom ? "" : fieldResolved.color)
-                    }
-                    style={
-                      fieldResolved.isCustom
-                        ? {
-                            color: fieldResolved.color,
-                            backgroundColor: `${fieldResolved.color}15`,
-                          }
-                        : {}
-                    }
-                    onClick={() => startEditField(fieldData.id, "type", fieldData.type)}
-                  >
-                    {fieldData.type +
-                      ((fieldResolved.isSized || fieldResolved.hasPrecision) &&
-                      fieldData.size &&
-                      fieldData.size !== ""
-                        ? `(${fieldData.size})`
-                        : "")}
-                  </span>
-                </div>
+                typeBadge
               )
             ) : null}
           </div>

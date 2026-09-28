@@ -96,7 +96,10 @@ function createField(parsed) {
   };
 
   if (parsed.size !== "") field.size = parsed.size;
-  if (isInlineEnumType(parsed.type)) field.values = parsed.values ?? [];
+  if (isInlineEnumType(parsed.type)) {
+    field.values = parsed.values ?? [];
+    if (parsed.enumName) field.enumName = parsed.enumName;
+  }
 
   return field;
 }
@@ -119,6 +122,11 @@ function mergeField(parsed, base, database) {
     merged.values = sameList(base.values, parsed.values)
       ? base.values
       : parsed.values ?? [];
+
+    // The code view owns the name so renames there are not reverted.
+    const enumName = String(parsed.enumName || base.enumName || "").trim();
+    if (enumName) merged.enumName = enumName;
+    else delete merged.enumName;
   }
 
   const size = resolveSize(parsed, base, type, database);

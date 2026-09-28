@@ -23,6 +23,7 @@ export const tableSchema = {
           comment: { type: "string" },
           size: { type: ["string", "number"] },
           values: { type: "array", items: { type: "string" } },
+          enumName: { type: "string" },
         },
         required: [
           "id",

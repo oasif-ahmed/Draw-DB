@@ -229,6 +229,15 @@ const en = {
       "Generic diagrams can be exported to any SQL flavor but support few data types.",
     enums: "Enums",
     add_enum: "Add enum",
+    enum_name: "Enum name",
+    enum_name_hint:
+      "Name used for this enum in the generated code. Leave empty to build one from the column name.",
+    enum_name_invalid:
+      "Use letters, numbers and underscores, starting with a letter",
+    enum_name_in_use: "This name is already used by another enum",
+    enum_needs_values: "Add at least one value",
+    enum_values_hint: "Values are shared by every column using this enum",
+    select_a_value: "Select a value",
     edit_enum: "{{extra}} Edit enum {{enumName}}",
     delete_enum: "Delete enum",
     enum_w_no_name: "Found enum with no name",

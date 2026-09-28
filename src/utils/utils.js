@@ -185,6 +185,19 @@ export function getRelationshipFields(relationship) {
   ];
 }
 
+export function getFieldEnumValues(field, enums = []) {
+  if (field?.type === "ENUM" || field?.type === "SET") {
+    return Array.isArray(field.values) ? field.values : [];
+  }
+
+  const namedEnum = enums.find(
+    (item) =>
+      String(item.name).toUpperCase() ===
+      String(field?.type ?? "").toUpperCase(),
+  );
+  return Array.isArray(namedEnum?.values) ? namedEnum.values : [];
+}
+
 export function isFieldRelatedToTable(
   tableId,
   field,

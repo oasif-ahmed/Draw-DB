@@ -130,7 +130,7 @@ export default function DBMLEditor({ onProblemsChange }) {
     let next;
     let plan;
     try {
-      const parsed = parseDbml(draft);
+      const parsed = parseDbml(draft, base.database);
       next = reconcileDbml(parsed, base, base.database);
       plan = diffDiagram(base, next);
     } catch (error) {
