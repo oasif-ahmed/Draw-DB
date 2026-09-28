@@ -333,23 +333,6 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
       setDiagramSource(null);
     };
 
-    const loadLatestDiagram = async () => {
-      let diagram;
-      try {
-        diagram = await db.diagrams.orderBy("lastModified").last();
-      } catch (error) {
-        console.log(error);
-        return;
-      }
-      if (!diagram) {
-        if (selectedDb === "") setShowSelectDbModal(true);
-        return;
-      }
-      setDiagramSource("local");
-      applyDiagramState(diagram);
-      navigate(`/editor/diagrams/${diagram.diagramId}`, { replace: true });
-    };
-
     const loadDiagram = async (id) => {
       const { diagram, source } = await fetchDiagram(id);
       if (!diagram) return;
@@ -429,12 +412,8 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
     }
 
     if (!loadedDiagramId) {
-      if (cloudOnly) {
-        if (previousLoadedId != null) resetEditorState();
-        if (selectedDb === "") setShowSelectDbModal(true);
-        return;
-      }
-      await loadLatestDiagram();
+      if (previousLoadedId !== loadedIdRef.current) resetEditorState();
+      if (selectedDb === "") setShowSelectDbModal(true);
       return;
     }
 
@@ -468,7 +447,6 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
     isDiagram,
     isTemplate,
     loadedDiagramId,
-    cloudOnly,
   ]);
 
   const returnToCurrentDiagram = async () => {
